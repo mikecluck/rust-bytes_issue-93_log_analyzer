@@ -45,5 +45,5 @@ Write all results to a **summary.json** file using the structure below:
 
 You can start by cloning the example repo on [GitHub for reference](https://github.com/Rust-Bytes/log_analyzer).
 
-Credits: Thanks to [Loghub for providing the log files used in this challenge](https://github.com/logpai/loghub/blob/master/Mac/Mac_2k.log).
+Credits: Thanks to [Loghub for providing the log file used in this challenge](https://github.com/logpai/loghub/blob/master/Mac/Mac_2k.log).
 
