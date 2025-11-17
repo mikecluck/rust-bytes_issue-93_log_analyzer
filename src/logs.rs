@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, u32};
 
 use serde::Serialize;
 use stopwords::Stopwords;
 
+#[allow(dead_code)]
 pub(crate) struct LogEntry {
     pub timestamp: String,
     pub hostname: String,
@@ -64,8 +65,13 @@ impl LogStatsBuilder {
             .filter(|s| !stopwords.contains(&s.as_str()));
 
         for keyword in keywords {
-            let count = self.keyword_count.get(&keyword).unwrap_or(&0);
-            self.keyword_count.insert(keyword, count + 1);
+            let keyword = keyword.trim();
+            if keyword.is_empty() {
+                continue;
+            }
+
+            let count = self.keyword_count.get(keyword).unwrap_or(&0);
+            self.keyword_count.insert(keyword.into(), count + 1);
         }
     }
 
@@ -93,15 +99,22 @@ impl LogStatsBuilder {
 
         self.most_frequent_hostname = most_frequent_hostname_name.to_string();
 
-        let max_count = self.keyword_count.values().max().unwrap();
-        let mut sorted_keywords = self
-            .keyword_count
-            .iter()
-            .filter(|(_, count)| count == &max_count)
-            .map(|(name, _)| name.to_string())
-            .collect::<Vec<_>>();
-        sorted_keywords.sort();
-        self.top_keywords = sorted_keywords;
+        let mut keywords_by_count = self.keyword_count.iter().collect::<Vec<_>>();
+        keywords_by_count.sort_by(|a, b| a.1.cmp(b.1).reverse().then(a.0.cmp(b.0)));
+
+        let mut top_keywords = Vec::new();
+
+        let mut prev_count = &u32::MAX;
+        for (key, count) in keywords_by_count {
+            if top_keywords.len() > 10 && count != prev_count {
+                break;
+            }
+
+            prev_count = count;
+            top_keywords.push(key.clone());
+        }
+
+        self.top_keywords = top_keywords;
 
         LogStats {
             total_entries: self.total_entries,
