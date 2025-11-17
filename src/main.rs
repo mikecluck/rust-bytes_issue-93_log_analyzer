@@ -1,8 +1,22 @@
 // Rust Bytes Challenge Issue #93 Log Analyzer
 mod logs;
+mod parser;
 
 fn main() {
-    println!("Hello, world!");
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 2 {
+        eprintln!("Usage: cargo run <path-to-file>");
+        std::process::exit(1);
+    }
+
+    let file = std::fs::File::open(args[1].clone()).unwrap();
+    let stats = parser::parse(file);
+    std::fs::write(
+        "summary.json",
+        serde_json::ser::to_string_pretty(&stats).unwrap(),
+    )
+    .unwrap();
+    println!("Results written to ./summary.json");
 }
 
 #[cfg(test)]
