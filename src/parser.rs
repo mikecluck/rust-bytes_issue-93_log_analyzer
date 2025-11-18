@@ -1,4 +1,4 @@
-use crate::logs::{self, LogEntry};
+use crate::logs::{LogEntry, LogStats, LogStatsBuilder};
 
 struct LogEntriesParser<'a> {
     data: &'a [u8],
@@ -11,7 +11,7 @@ impl<'a> LogEntriesParser<'a> {
 }
 
 impl<'a> Iterator for LogEntriesParser<'a> {
-    type Item = logs::LogEntry;
+    type Item = LogEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.is_empty() {
@@ -20,7 +20,7 @@ impl<'a> Iterator for LogEntriesParser<'a> {
 
         let (unparsed_data, entry) = parse_log_entry(self.data).unwrap();
         self.data = unparsed_data;
-        return Some(entry);
+        Some(entry)
     }
 }
 
@@ -32,10 +32,10 @@ fn parse_log_entry(input: &[u8]) -> nom::IResult<&[u8], LogEntry> {
     // timestamp
     let (input, month) = nom::bytes::complete::take_while(|b| (b as char).is_alphabetic())(input)?;
     let (input, _) = ws(input)?;
-    let (input, day) = nom::bytes::complete::take_while(|b| (b as char).is_digit(10))(input)?;
+    let (input, day) = nom::bytes::complete::take_while(|b| (b as char).is_ascii_digit())(input)?;
     let (input, _) = ws(input)?;
     let (input, time) =
-        nom::bytes::complete::take_while(|b| (b as char).is_digit(10) || (b as char) == ':')(
+        nom::bytes::complete::take_while(|b| (b as char).is_ascii_digit() || (b as char) == ':')(
             input,
         )?;
     let (input, _) = ws(input)?;
@@ -50,7 +50,7 @@ fn parse_log_entry(input: &[u8]) -> nom::IResult<&[u8], LogEntry> {
 
     // pid
     let (input, _) = nom::bytes::complete::take(1usize)(input)?; // [
-    let (input, pid) = nom::bytes::complete::take_while(|b| (b as char).is_digit(10))(input)?;
+    let (input, pid) = nom::bytes::complete::take_while(|b| (b as char).is_ascii_digit())(input)?;
     let (input, _) = nom::bytes::complete::take(1usize)(input)?; // ]
     let (input, _) = nom::bytes::complete::take(1usize)(input)?; // :
     let (input, _) = ws(input)?;
@@ -82,10 +82,10 @@ fn parse_log_entry(input: &[u8]) -> nom::IResult<&[u8], LogEntry> {
     ))
 }
 
-pub(crate) fn parse(file: std::fs::File) -> logs::LogStats {
+pub(crate) fn parse(file: std::fs::File) -> LogStats {
     let data = unsafe { memmap2::Mmap::map(&file).unwrap() };
     let parser = LogEntriesParser::new(&data);
-    let mut stats_builder = logs::LogStatsBuilder::new();
+    let mut stats_builder = LogStatsBuilder::new();
     for entry in parser {
         stats_builder.add_log_entry(entry);
     }

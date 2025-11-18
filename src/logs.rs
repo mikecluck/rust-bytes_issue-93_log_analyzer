@@ -1,4 +1,4 @@
-use std::{collections::HashMap, u32};
+use std::collections::HashMap;
 
 use serde::Serialize;
 use stopwords::Stopwords;
