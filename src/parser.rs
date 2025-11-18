@@ -24,96 +24,62 @@ impl<'a> Iterator for LogEntriesParser<'a> {
     }
 }
 
-fn parse_log_entry(input: &[u8]) -> nom::IResult<&[u8], LogEntry> {
-    fn parse_line(input: &[u8]) -> nom::IResult<&[u8], &str> {
-        // Keep going until null or newline
-        let (input, parse_result) =
-            nom::bytes::complete::take_till(|b| b == 0x00 || b == 0x0A)(input)?;
-        let (input, _) = nom::bytes::complete::take_while(|b| b == 0x00 || b == 0x0A)(input)?;
-        Ok((input, str::from_utf8(parse_result).unwrap()))
-    }
+fn ws(input: &[u8]) -> nom::IResult<&[u8], &[u8]> {
+    nom::bytes::complete::take_while(|b| (b as char).is_whitespace())(input)
+}
 
-    let (input, line) = parse_line(input)?;
-    let (line, timestamp) = parse_timestamp(line).map_err(|err| {
-        err.map(|e| nom::error::Error {
+fn parse_log_entry(input: &[u8]) -> nom::IResult<&[u8], LogEntry> {
+    // timestamp
+    let (input, month) = nom::bytes::complete::take_while(|b| (b as char).is_alphabetic())(input)?;
+    let (input, _) = ws(input)?;
+    let (input, day) = nom::bytes::complete::take_while(|b| (b as char).is_digit(10))(input)?;
+    let (input, _) = ws(input)?;
+    let (input, time) =
+        nom::bytes::complete::take_while(|b| (b as char).is_digit(10) || (b as char) == ':')(
             input,
-            code: e.code,
-        })
-    })?;
-    let (line, hostname) = parse_hostname(line).map_err(|err| {
-        err.map(|e| nom::error::Error {
-            input,
-            code: e.code,
-        })
-    })?;
-    let (line, process_name) = parse_process_name(line).map_err(|err| {
-        err.map(|e| nom::error::Error {
-            input,
-            code: e.code,
-        })
-    })?;
-    let (line, pid) = parse_pid(line).map_err(|err| {
-        err.map(|e| nom::error::Error {
-            input,
-            code: e.code,
-        })
-    })?;
+        )?;
+    let (input, _) = ws(input)?;
+
+    // hostname
+    let (input, hostname) =
+        nom::bytes::complete::take_while(|b| !(b as char).is_whitespace())(input)?;
+    let (input, _) = ws(input)?;
+
+    // process name
+    let (input, process_name) = nom::bytes::complete::take_while(|b| (b as char) != '[')(input)?;
+
+    // pid
+    let (input, _) = nom::bytes::complete::take(1usize)(input)?; // [
+    let (input, pid) = nom::bytes::complete::take_while(|b| (b as char).is_digit(10))(input)?;
+    let (input, _) = nom::bytes::complete::take(1usize)(input)?; // ]
+    let (input, _) = nom::bytes::complete::take(1usize)(input)?; // :
+    let (input, _) = ws(input)?;
+
+    // the message
+    let (input, message) = nom::bytes::complete::take_till(|b| b == 0x00 || b == 0x0A)(input)?;
+
+    // Eat the rest of the line or file
+    let (input, _) = nom::bytes::complete::take_while(|b| b == 0x00 || b == 0x0A)(input)?;
+
+    // convert everything to `str`s
+    let month = str::from_utf8(month).unwrap();
+    let day = str::from_utf8(day).unwrap();
+    let time = str::from_utf8(time).unwrap();
+    let hostname = str::from_utf8(hostname).unwrap();
+    let process_name = str::from_utf8(process_name).unwrap();
+    let pid = str::from_utf8(pid).unwrap();
+    let message = str::from_utf8(message).unwrap();
+
     Ok((
         input,
         LogEntry {
-            timestamp,
-            hostname,
-            process_name,
-            pid,
-            message: line.to_string(),
+            timestamp: format!("{} {} {}", month, day, time),
+            hostname: hostname.to_string(),
+            process_name: process_name.to_string(),
+            pid: pid.parse().unwrap(),
+            message: message.to_string(),
         },
     ))
-}
-
-fn parse_timestamp(input: &str) -> nom::IResult<&str, String> {
-    fn parse_month(input: &str) -> nom::IResult<&str, &str> {
-        nom::bytes::complete::take_while(|c: char| c.is_alphabetic())(input)
-    }
-
-    fn parse_day(input: &str) -> nom::IResult<&str, &str> {
-        nom::bytes::complete::take_while(|c: char| c.is_digit(10))(input)
-    }
-
-    fn parse_time(input: &str) -> nom::IResult<&str, &str> {
-        nom::bytes::complete::take_while(|c: char| c.is_digit(10) || c == ':')(input)
-    }
-
-    let (input, month) = parse_month(input)?;
-    let (input, _) = parse_whitespace(input)?;
-    let (input, day) = parse_day(input)?;
-    let (input, _) = parse_whitespace(input)?;
-    let (input, time) = parse_time(input)?;
-    let (input, _) = parse_whitespace(input)?;
-    Ok((input, format!("{} {} {}", month, day, time)))
-}
-
-fn parse_hostname(input: &str) -> nom::IResult<&str, String> {
-    let (input, result) = nom::bytes::complete::take_while(|c: char| !c.is_whitespace())(input)?;
-    let (input, _) = parse_whitespace(input)?;
-    Ok((input, result.to_string()))
-}
-
-fn parse_process_name(input: &str) -> nom::IResult<&str, String> {
-    let (input, result) = nom::bytes::complete::take_while(|c: char| c != '[')(input)?;
-    Ok((input, result.to_string()))
-}
-
-fn parse_pid(input: &str) -> nom::IResult<&str, u32> {
-    let (input, _) = nom::bytes::complete::take(1usize)(input)?; // [
-    let (input, result) = nom::bytes::complete::take_while(|c: char| c.is_digit(10))(input)?;
-    let (input, _) = nom::bytes::complete::take(1usize)(input)?; // ]
-    let (input, _) = nom::bytes::complete::take(1usize)(input)?; // :
-    let (input, _) = parse_whitespace(input)?;
-    Ok((input, result.parse().expect("Failed to parse PID")))
-}
-
-fn parse_whitespace(input: &str) -> nom::IResult<&str, &str> {
-    nom::bytes::complete::take_while(|c: char| c.is_whitespace())(input)
 }
 
 pub(crate) fn parse(file: std::fs::File) -> logs::LogStats {
